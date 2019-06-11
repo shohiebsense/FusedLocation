@@ -34,17 +34,10 @@ import kotlin.collections.ArrayList
 
 class MainActivity : AppCompatActivity() {
 
-    var location: Location? = null
 
     val PLAY_SERVICE_RESOLUTION_REQUEST = 9000
-    val UPDATE_INTERVAL = 5000L
-    val FASTEST_INTERVAL = 5000L
-
-    val permissionListToRequest = arrayListOf<String>()
-    val permissionListRejected = arrayListOf<String>()
     val permissionList = arrayListOf<String>()
 
-    val ALL_PERMISSIONS_RESULT = 1011
 
 
 
