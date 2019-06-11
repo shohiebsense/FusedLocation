@@ -97,6 +97,8 @@ class MainActivity : AppCompatActivity() {
             Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
                     .setAction("Action", null).show()
         }
+
+        handleButtons()
     }
 
     fun updateValuesFromBundle(savedInstanceState: Bundle?){
@@ -279,26 +281,6 @@ class MainActivity : AppCompatActivity() {
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), RequestCode.PERMISSIONS_REQUEST_CODE)
         }
     }
-
-
-    fun isPlayServiceInstalled() : Boolean {
-        val apiAvailability = GoogleApiAvailability.getInstance()
-        val resultCode = apiAvailability.isGooglePlayServicesAvailable(this)
-
-        if(resultCode != ConnectionResult.SUCCESS){
-            if(apiAvailability.isUserResolvableError(resultCode)){
-                apiAvailability.getErrorDialog(this, resultCode, PLAY_SERVICE_RESOLUTION_REQUEST)
-            }
-            else{
-                finish()
-            }
-            return false
-        }
-        return true
-    }
-
-
-
 
 
     fun isLocationPermissionGranted() : Boolean{
