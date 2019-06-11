@@ -2,12 +2,17 @@ package com.shohiebsense.latitudelongitudeimpl
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.PendingIntent
+import android.app.Activity
 import android.content.DialogInterface
+import android.content.Intent
+import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.location.Location
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Looper
+import android.provider.Settings
 import android.support.design.widget.Snackbar
 import android.support.v4.app.ActivityCompat
 import android.support.v7.app.AlertDialog
@@ -16,24 +21,22 @@ import android.view.Menu
 import android.view.MenuItem
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.GoogleApiClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationListener
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationServices
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.*
 
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.content_main.*
+import java.text.DateFormat
+import java.util.*
+import kotlin.collections.ArrayList
 
-class MainActivity : AppCompatActivity(), GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener,
-    LocationListener {
+class MainActivity : AppCompatActivity() {
 
     var location: Location? = null
-    var locationCallback = LocationCallback()
-    lateinit var googleAPIClient : GoogleApiClient
 
     val PLAY_SERVICE_RESOLUTION_REQUEST = 9000
-    lateinit var locationRequest : LocationRequest
     val UPDATE_INTERVAL = 5000L
     val FASTEST_INTERVAL = 5000L
 
@@ -45,14 +48,56 @@ class MainActivity : AppCompatActivity(), GoogleApiClient.ConnectionCallbacks, G
 
 
 
+    object RequestCode {
+        const val PERMISSIONS_REQUEST_CODE = 34
+        const val SETTINGS_REQUEST_CODE = 0x1
+        const val UPDATE_INTERVAL_IN_MILLISECONDS : Long = 1000
+        const val FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS: Long = UPDATE_INTERVAL_IN_MILLISECONDS / 2
+
+        const val KEY_REQUESTING_LOCATION_UPDATES = "requesting-location-updates"
+        const val KEY_LOCATION = "location"
+        const val KEY_LAST_UPDATED_TIME_STRING = "last-updated-time-string"
+
+
+    }
+
+    lateinit var fusedLocationClient : FusedLocationProviderClient
+    lateinit var settingsClient : SettingsClient
+    lateinit var locationRequest: LocationRequest
+    lateinit var locationSettingsRequest : LocationSettingsRequest
+    lateinit var locationCallback : LocationCallback
+    var currentLocation : Location? = null
+
+
+    var latitudeLabel = ""
+    var longitudeLabel = ""
+    var lastUpdateTimeLabel = ""
+
+    var isRequestingLocationUpdates = false
+
+    var lastUpdateTime = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         setSupportActionBar(toolbar)
 
+
+        latitudeLabel = getString(R.string.latitude_label)
+        longitudeLabel = getString(R.string.longitude_label)
+        lastUpdateTimeLabel = getString(R.string.last_update_time_label)
+
+        updateValuesFromBundle(savedInstanceState)
+
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        settingsClient = LocationServices.getSettingsClient(this)
+
+        createLocationCallback()
+        createLocationRequest()
+        buildLocationSettingsRequest()
+
         permissionList.add(Manifest.permission.ACCESS_FINE_LOCATION)
         permissionList.add(Manifest.permission.ACCESS_COARSE_LOCATION)
-
 
 
         fab.setOnClickListener { view ->
@@ -60,6 +105,79 @@ class MainActivity : AppCompatActivity(), GoogleApiClient.ConnectionCallbacks, G
                     .setAction("Action", null).show()
         }
     }
+
+    fun updateValuesFromBundle(savedInstanceState: Bundle?){
+        if(savedInstanceState != null){
+            if(savedInstanceState.keySet().contains(RequestCode.KEY_REQUESTING_LOCATION_UPDATES)){
+                isRequestingLocationUpdates = savedInstanceState.getBoolean(
+                    RequestCode.KEY_REQUESTING_LOCATION_UPDATES
+                )
+            }
+
+            if(savedInstanceState.keySet().contains(RequestCode.KEY_LOCATION)){
+                currentLocation = savedInstanceState.getParcelable(RequestCode.KEY_LOCATION)
+            }
+
+            if(savedInstanceState.keySet().contains(RequestCode.KEY_LAST_UPDATED_TIME_STRING)){
+                lastUpdateTime = savedInstanceState.getString(RequestCode.KEY_LAST_UPDATED_TIME_STRING)
+            }
+
+            updateUI()
+        }
+    }
+
+    fun updateUI(){
+        setButtonEnabledState()
+        updateLocationUI()
+    }
+
+    fun setButtonEnabledState(){
+        if(isRequestingLocationUpdates){
+            start_updates_button.isEnabled = false
+            stop_updates_button.isEnabled = true
+        }
+        else{
+            start_updates_button.isEnabled = true
+            stop_updates_button.isEnabled = false
+        }
+    }
+
+    fun updateLocationUI(){
+        if(currentLocation != null){
+            latitude_text.text = String.format(Locale.ENGLISH, "%s: %f", latitudeLabel, currentLocation!!.latitude)
+            longitude_text.text = String.format(Locale.ENGLISH, "%s: %f", longitudeLabel, currentLocation!!.longitude)
+            last_update_time_text.text = String.format(Locale.ENGLISH, "%s: %s",lastUpdateTimeLabel, lastUpdateTime)
+        }
+    }
+
+
+    fun createLocationCallback(){
+        locationCallback = object: LocationCallback(){
+            override fun onLocationResult(locationResult: LocationResult?) {
+                super.onLocationResult(locationResult)
+
+                currentLocation = locationResult?.lastLocation
+                lastUpdateTime = DateFormat.getTimeInstance().format(Date())
+                updateLocationUI()
+            }
+        }
+    }
+
+    fun createLocationRequest(){
+        locationRequest = LocationRequest()
+
+        locationRequest.interval = RequestCode.UPDATE_INTERVAL_IN_MILLISECONDS
+        locationRequest.fastestInterval = RequestCode.FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS
+        locationRequest.priority = LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY
+
+    }
+
+   fun buildLocationSettingsRequest(){
+       val builder = LocationSettingsRequest.Builder()
+       builder.addLocationRequest(locationRequest)
+       locationSettingsRequest = builder.build()
+   }
+
 
 
     fun permissionsToRequest(permissionList: ArrayList<String>) : ArrayList<String>{
@@ -95,18 +213,80 @@ class MainActivity : AppCompatActivity(), GoogleApiClient.ConnectionCallbacks, G
         }
     }
 
-
-    override fun onStart() {
-        super.onStart()
-        googleAPIClient.connect()
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        when(requestCode){
+            Activity.RESULT_OK -> {
+                //user agreed
+            }
+            Activity.RESULT_CANCELED -> {
+                isRequestingLocationUpdates = false
+                updateUI()
+            }
+        }
     }
+
+    fun handleButtons(){
+        start_updates_button.setOnClickListener {
+            if(!isRequestingLocationUpdates){
+                isRequestingLocationUpdates = true
+                setButtonEnabledState()
+                startLocationUpdates()
+            }
+        }
+
+        stop_updates_button.setOnClickListener {
+            stopLocationUpdtes()
+        }
+    }
+
+
+
+    fun stopLocationUpdtes(){
+        if(!isRequestingLocationUpdates){
+            //updates never requested
+        }
+
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+            .addOnCompleteListener {
+                isRequestingLocationUpdates = false
+                setButtonEnabledState()
+            }
+    }
+
 
     override fun onResume() {
         super.onResume()
-        if(!isPlayServiceInstalled()){
-            text_location.text = "Plesae install Google Play Service"
+
+        if(isRequestingLocationUpdates && arePermissionsGranted()){
+            startLocationUpdates()
+        }
+        else if(!arePermissionsGranted()){
+            requestPermissions()
+        }
+
+        updateUI()
+    }
+
+    fun arePermissionsGranted() : Boolean{
+        val permissionState = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        return permissionState == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestPermissions(){
+        val shouldProvideRationale = ActivityCompat.shouldShowRequestPermissionRationale(this,
+            Manifest.permission.ACCESS_FINE_LOCATION)
+
+        if(shouldProvideRationale){
+            //show rationale
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                RequestCode.PERMISSIONS_REQUEST_CODE)
+        }
+        else{
+            ActivityCompat.requestPermissions(this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), RequestCode.PERMISSIONS_REQUEST_CODE)
         }
     }
+
 
     fun isPlayServiceInstalled() : Boolean {
         val apiAvailability = GoogleApiAvailability.getInstance()
@@ -124,21 +304,9 @@ class MainActivity : AppCompatActivity(), GoogleApiClient.ConnectionCallbacks, G
         return true
     }
 
-    override fun onPause() {
-        super.onPause()
-        if(googleAPIClient != null && googleAPIClient.isConnected){
-            LocationServices.FusedLocationApi.removeLocationUpdates(googleAPIClient,this)
-            googleAPIClient.disconnect()
-        }
-    }
-
-    override fun onLocationChanged(location: Location?) {
-        text_location.text = "Latitude ${location!!.latitude}\nLongitude: ${location!!.longitude}"
-    }
 
 
-    override fun onConnectionFailed(p0: ConnectionResult) {
-    }
+
 
     fun isLocationPermissionGranted() : Boolean{
         return ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -146,65 +314,62 @@ class MainActivity : AppCompatActivity(), GoogleApiClient.ConnectionCallbacks, G
 
     }
 
-    @SuppressLint("MissingPermission")
-    override fun onConnected(bundle: Bundle?) {
-        if(!isLocationPermissionGranted()) return
 
-        location = LocationServices.getFusedLocationProviderClient(this).lastLocation.result!!
-        if(location != null){
-            text_location.text = "Latitude ${location!!.latitude}\nLongitude: ${location!!.longitude}"
-        }
-        startLocationUpdates()
-    }
-
-    @SuppressLint("MissingPermission")
     fun startLocationUpdates(){
-        locationRequest = LocationRequest()
-        locationRequest.priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-        locationRequest.interval = UPDATE_INTERVAL
-        locationRequest.fastestInterval = FASTEST_INTERVAL
+        settingsClient.checkLocationSettings(locationSettingsRequest)
+            .addOnSuccessListener {
+                fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.myLooper())
+                updateUI()
+            }
+            .addOnFailureListener {
+                val statusCode = (it as ApiException).statusCode
+                when(statusCode){
+                    LocationSettingsStatusCodes.RESOLUTION_REQUIRED -> {
+                        //location settings not satisfied
+                        try{
+                            val resolvableApiException = it as ResolvableApiException
+                            resolvableApiException.startResolutionForResult(this, RequestCode.SETTINGS_REQUEST_CODE)
+                        }catch (sendIntentException : IntentSender.SendIntentException){
 
-        if(isLocationPermissionGranted()){
-            LocationServices.getFusedLocationProviderClient(this).requestLocationUpdates(locationRequest,
-                locationCallback, null)
-        }
+                        }
+                    }
+
+                    LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE -> {
+                        val errorMessage = "Location Setttings inadequate"
+                        isRequestingLocationUpdates = false
+                    }
+                }
+                updateUI()
+            }
     }
 
-    override fun onConnectionSuspended(p0: Int) {
-    }
 
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        when(requestCode){
-            ALL_PERMISSIONS_RESULT -> {
-                permissionListToRequest.forEach {
-                    if(!hasPermission(it)){
-                        permissionListRejected.add(it)
-                    }
-                }
+        if(requestCode == RequestCode.PERMISSIONS_REQUEST_CODE){
+            if(grantResults.isEmpty()){
 
-                if(permissionListRejected.isNotEmpty()){
-                    if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M){
-                        if(shouldShowRequestPermissionRationale(permissionListRejected[0])){
-                            AlertDialog.Builder(this)
-                                .setMessage("This permssion is mandatory")
-                                .setPositiveButton("Ok", object : DialogInterface.OnClickListener{
-                                    override fun onClick(dialog: DialogInterface?, which: Int) {
 
-                                        requestPermissions(permissionListRejected.toTypedArray(), ALL_PERMISSIONS_RESULT)
-                                    }
-
-                                })
-                                .create().show()
-                        }
-                    }
-                    return
-                }
-
-                if(googleAPIClient != null){
-                    googleAPIClient.connect()
+                //cancelled
+            }
+            else if(grantResults[0] == PackageManager.PERMISSION_GRANTED){
+                if(isRequestingLocationUpdates){
+                    startLocationUpdates()
                 }
             }
+            else{
+                //denied
+                val intent = Intent()
+                intent.action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                val uri = Uri.fromParts(
+                    "package",
+                    BuildConfig.APPLICATION_ID, null
+                )
+                intent.data = uri
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                startActivity(intent)
+            }
+
         }
 
     }
