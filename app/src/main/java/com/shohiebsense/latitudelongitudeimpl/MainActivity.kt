@@ -34,12 +34,7 @@ import kotlin.collections.ArrayList
 
 class MainActivity : AppCompatActivity() {
 
-
-    val PLAY_SERVICE_RESOLUTION_REQUEST = 9000
     val permissionList = arrayListOf<String>()
-
-
-
 
     object RequestCode {
         const val PERMISSIONS_REQUEST_CODE = 34
@@ -50,8 +45,6 @@ class MainActivity : AppCompatActivity() {
         const val KEY_REQUESTING_LOCATION_UPDATES = "requesting-location-updates"
         const val KEY_LOCATION = "location"
         const val KEY_LAST_UPDATED_TIME_STRING = "last-updated-time-string"
-
-
     }
 
     lateinit var fusedLocationClient : FusedLocationProviderClient
@@ -62,7 +55,9 @@ class MainActivity : AppCompatActivity() {
     var currentLocation : Location? = null
 
 
+    //latitude NS
     var latitudeLabel = ""
+    //longitude WE
     var longitudeLabel = ""
     var lastUpdateTimeLabel = ""
 
@@ -140,7 +135,9 @@ class MainActivity : AppCompatActivity() {
     fun updateLocationUI(){
         if(currentLocation != null){
             latitude_text.text = String.format(Locale.ENGLISH, "%s: %f", latitudeLabel, currentLocation!!.latitude)
+            latitude_NS_notation_text.text = convertLatitudeNotation()
             longitude_text.text = String.format(Locale.ENGLISH, "%s: %f", longitudeLabel, currentLocation!!.longitude)
+            longitude_WE_notation_text.text = convertLongitudeToNotation()
             last_update_time_text.text = String.format(Locale.ENGLISH, "%s: %s",lastUpdateTimeLabel, lastUpdateTime)
         }
     }
@@ -173,7 +170,29 @@ class MainActivity : AppCompatActivity() {
        locationSettingsRequest = builder.build()
    }
 
+    fun convertLatitudeNotation() : String{
+        var latitudeStr = currentLocation!!.latitude.toString()
+        if(latitudeStr.contains("-")){
+            latitudeStr.replace("-","")
+            latitudeStr += latitudeStr + "S"
+        }
+        else{
+            latitudeStr += "N"
+        }
+        return latitudeStr
+    }
 
+    fun convertLongitudeToNotation() : String{
+        var longitudeStr = currentLocation!!.longitude.toString()
+        if(longitudeStr.contains("-")) {
+            longitudeStr.replace("-","")
+            longitudeStr += "S"
+        }
+        else{
+            longitudeStr += "N"
+        }
+        return longitudeStr
+    }
 
     fun permissionsToRequest(permissionList: ArrayList<String>) : ArrayList<String>{
         val resultList = arrayListOf<String>()
@@ -290,6 +309,7 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    @SuppressLint("MissingPermission")
     fun startLocationUpdates(){
         settingsClient.checkLocationSettings(locationSettingsRequest)
             .addOnSuccessListener {
